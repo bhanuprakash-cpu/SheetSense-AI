@@ -5,10 +5,16 @@ import os
 import sys
 
 import pandas as pd
+import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from sheetsense.analytics import build_summary, load_tabular_from_bytes, run_query
+from sheetsense.analytics import (
+    _validate_public_http_url,
+    build_summary,
+    load_tabular_from_bytes,
+    run_query,
+)
 
 
 def test_load_tabular_from_bytes_csv():
@@ -38,3 +44,18 @@ def test_run_query_chart_and_summary():
 def test_build_summary_empty_data():
     summary = build_summary(pd.DataFrame())
     assert summary == "No data loaded yet."
+
+
+def test_validate_public_url_rejects_localhost():
+    with pytest.raises(ValueError, match="Localhost"):
+        _validate_public_http_url("http://localhost/data.csv")
+
+
+def test_validate_public_url_rejects_non_http_scheme():
+    with pytest.raises(ValueError, match="http/https"):
+        _validate_public_http_url("file:///tmp/data.csv")
+
+
+def test_validate_public_url_rejects_loopback_ip():
+    with pytest.raises(ValueError, match="Private or unsafe"):
+        _validate_public_http_url("http://127.0.0.1/data.csv")

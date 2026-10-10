@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from io import BytesIO
+import ipaddress
 import re
+import socket
 from typing import Optional
+from urllib.parse import urlparse
 
 import pandas as pd
 import requests
@@ -31,6 +34,7 @@ def load_tabular_from_bytes(filename: str, payload: bytes) -> pd.DataFrame:
 
 
 def load_tabular_from_url(url: str) -> pd.DataFrame:
+    _validate_public_http_url(url)
     response = requests.get(url, timeout=15)
     response.raise_for_status()
     name_from_url = url.split("?")[0].lower()
@@ -46,7 +50,7 @@ def load_tabular_from_url(url: str) -> pd.DataFrame:
     try:
         return pd.read_excel(BytesIO(response.content))
     except Exception as exc:
-        raise ValueError("URL content is not a valid CSV/Excel document.") from exc if csv_error else exc
+        raise ValueError("URL content is not a valid CSV/Excel document.") from exc
 
 
 def extract_table_from_image(payload: bytes) -> pd.DataFrame:
@@ -104,6 +108,29 @@ def _top_n_request(query: str) -> Optional[int]:
     return None
 
 
+def _validate_public_http_url(url: str) -> None:
+    parsed = urlparse(url.strip())
+    if parsed.scheme not in {"http", "https"}:
+        raise ValueError("Only http/https URLs are supported.")
+    if not parsed.hostname:
+        raise ValueError("URL must include a host.")
+
+    host = parsed.hostname.lower()
+    if host in {"localhost"} or host.endswith(".local"):
+        raise ValueError("Localhost or local-network URLs are not allowed.")
+
+    try:
+        resolved = socket.getaddrinfo(host, parsed.port or (443 if parsed.scheme == "https" else 80))
+    except socket.gaierror as exc:
+        raise ValueError("Host cannot be resolved.") from exc
+
+    for _, _, _, _, sockaddr in resolved:
+        ip_candidate = sockaddr[0]
+        ip = ipaddress.ip_address(ip_candidate)
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved:
+            raise ValueError("Private or unsafe network destinations are not allowed.")
+
+
 def run_query(df: pd.DataFrame, query: str) -> QueryResult:
     if df.empty:
         return QueryResult(summary="No data available. Upload data first.")
@@ -135,4 +162,3 @@ def run_query(df: pd.DataFrame, query: str) -> QueryResult:
         )
 
     return QueryResult(summary=summary, table=result_table)
-
