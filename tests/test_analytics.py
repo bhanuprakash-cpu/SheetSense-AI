@@ -10,6 +10,7 @@ import pytest
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from sheetsense.analytics import (
+    _normalize_supported_spreadsheet_url,
     _validate_public_http_url,
     build_summary,
     load_tabular_from_bytes,
@@ -59,3 +60,13 @@ def test_validate_public_url_rejects_non_http_scheme():
 def test_validate_public_url_rejects_loopback_ip():
     with pytest.raises(ValueError, match="Private or unsafe"):
         _validate_public_http_url("http://127.0.0.1/data.csv")
+
+
+def test_normalize_github_blob_to_raw_url():
+    normalized = _normalize_supported_spreadsheet_url(
+        "https://github.com/org/repo/blob/main/data/report.xlsx"
+    )
+    assert (
+        normalized
+        == "https://raw.githubusercontent.com/org/repo/main/data/report.xlsx"
+    )

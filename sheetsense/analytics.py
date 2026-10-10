@@ -6,7 +6,7 @@ import ipaddress
 import re
 import socket
 from typing import Optional
-from urllib.parse import urlparse
+from urllib.parse import quote, unquote, urlparse
 
 import pandas as pd
 import requests
@@ -34,10 +34,10 @@ def load_tabular_from_bytes(filename: str, payload: bytes) -> pd.DataFrame:
 
 
 def load_tabular_from_url(url: str) -> pd.DataFrame:
-    _validate_public_http_url(url)
-    response = requests.get(url, timeout=15)
+    safe_url = _normalize_supported_spreadsheet_url(url)
+    response = requests.get(safe_url, timeout=15, allow_redirects=False)
     response.raise_for_status()
-    name_from_url = url.split("?")[0].lower()
+    name_from_url = safe_url.split("?")[0].lower()
     if name_from_url.endswith(SUPPORTED_TABULAR_EXTENSIONS):
         return load_tabular_from_bytes(name_from_url, response.content)
 
@@ -108,13 +108,46 @@ def _top_n_request(query: str) -> Optional[int]:
     return None
 
 
-def _validate_public_http_url(url: str) -> None:
+def _normalize_supported_spreadsheet_url(url: str) -> str:
     parsed = urlparse(url.strip())
     if parsed.scheme not in {"http", "https"}:
         raise ValueError("Only http/https URLs are supported.")
     if not parsed.hostname:
         raise ValueError("URL must include a host.")
 
+    host = parsed.hostname.lower()
+    if host in {"localhost"} or host.endswith(".local"):
+        raise ValueError("Localhost or local-network URLs are not allowed.")
+
+    path = unquote(parsed.path or "/")
+    if parsed.hostname.lower() == "github.com":
+        parts = [segment for segment in path.split("/") if segment]
+        if len(parts) < 5 or parts[2] != "blob":
+            raise ValueError("GitHub links must follow /owner/repo/blob/branch/path format.")
+        owner, repo, _, branch = parts[:4]
+        file_path = "/".join(parts[4:])
+        if not file_path.lower().endswith(SUPPORTED_TABULAR_EXTENSIONS):
+            raise ValueError("URL must point to a CSV/Excel file.")
+        encoded_path = quote(file_path, safe="/")
+        return f"https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{encoded_path}"
+
+    if host == "raw.githubusercontent.com":
+        if not path.lower().endswith(SUPPORTED_TABULAR_EXTENSIONS):
+            raise ValueError("URL must point to a CSV/Excel file.")
+        return f"https://raw.githubusercontent.com{quote(path, safe='/')}"
+
+    raise ValueError(
+        "Only GitHub spreadsheet links are supported (github.com blob or raw.githubusercontent.com)."
+    )
+
+
+def _validate_public_http_url(url: str) -> None:
+    # Backward-compatible validator kept for tests and input checks.
+    parsed = urlparse(url.strip())
+    if parsed.scheme not in {"http", "https"}:
+        raise ValueError("Only http/https URLs are supported.")
+    if not parsed.hostname:
+        raise ValueError("URL must include a host.")
     host = parsed.hostname.lower()
     if host in {"localhost"} or host.endswith(".local"):
         raise ValueError("Localhost or local-network URLs are not allowed.")

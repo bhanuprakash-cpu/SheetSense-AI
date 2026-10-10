@@ -5,7 +5,7 @@ SheetSense AI is an AI-powered data analytics dashboard that lets users analyze 
 ## Features
 
 - Upload CSV and Excel files (`.csv`, `.xls`, `.xlsx`)
-- Load spreadsheet data directly from CSV/Excel URLs
+- Load spreadsheet data from GitHub spreadsheet links (`github.com/.../blob/...` or `raw.githubusercontent.com/...`)
 - Upload screenshots/images with table-like data for OCR extraction
 - Ask natural-language questions to generate:
   - summaries and quick insights
